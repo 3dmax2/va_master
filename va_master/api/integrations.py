@@ -199,10 +199,20 @@ def get_trigger_kwargs_from_data(handler, trigger, request_data, args_map, event
                 print ('Key ', prefix_key, ' not found in ', request_data)
                 raise tornado.gen.Return({})
 
-
     #NOTE this line is kinda fishy - if the request data doesn't contain all keys, we just ignore the missing ones. 
     #This was added so that the dashboard calls which send positional arguments don't mess everything up. However, I should think of a better way to handle that. 
-    kwargs = {key: request_data.get(args_map[key]) for key in args_map if request_data.get(args_map[key])}
+    kwargs = {key: request_data.pop(args_map[key]) for key in args_map if request_data.get(args_map[key])}
+
+
+    #We go through the args_map to see if any argument has a wildcard value.
+    #Wildcard arguments just get all the data that hasn't been used up by the regular arguments. 
+    wildcard = [x for x in args_map if args_map[x] == '*'] or [None]
+    wildcard = wildcard[0]
+    if wildcard:
+        kwargs[wildcard] = request_data
+
+    if args_map.get('*'):
+        kwargs[args_map] = request_data
     print ('FInal kwargs are : ', kwargs)
     raise tornado.gen.Return(kwargs)        
 
