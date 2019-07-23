@@ -12,7 +12,7 @@ from va_master.api import url_handler
 from va_master.api.login import get_current_user, user_login
 from va_master.api.users import get_predefined_arguments
 from va_master.api.panels import panel_action, get_panel_for_user
-from va_master.api.triggers import handle_app_trigger 
+#from va_master.api.triggers import handle_app_trigger 
 from va_master.handlers.drivers_handler import DriversHandler
 from proxy_handler import ProxyHandler
 
@@ -126,6 +126,7 @@ class ApiHandler(tornado.web.RequestHandler):
             user = yield get_current_user(self)
             if not user:
                 self.json({'success' : False, 'message' : 'User not authenticated properly. ', 'data' : {}})
+
                 auth_successful = False
             elif user['type'] == 'user' :
                 user_functions = yield self.datastore_handler.get_user_functions(user.get('username'))
@@ -171,11 +172,8 @@ class ApiHandler(tornado.web.RequestHandler):
     def handle_func(self, api_func, data):
         try:
             api_func, api_args = api_func.get('function'), api_func.get('args')
-            print ('Api func : ', api_func, ' args ', api_args)
             api_kwargs = {x : data.get(x) for x in api_args if x in data.keys()} or {}
-            print ('Kwargs are : ', api_kwargs)
             api_kwargs.update({x : self.utils[x] for x in api_args if x in self.utils})
-            print ('Now are : ', api_kwargs)
 
             yield self.check_arguments(api_func, api_args, api_kwargs.keys())
 
@@ -221,8 +219,9 @@ class ApiHandler(tornado.web.RequestHandler):
     #TODO remove this function maybe, it's orphaned now. 
     @tornado.gen.coroutine
     def check_and_resolve_trigger(self, api_func, dash_user):
-        if api_func['function'] == panel_action:
-            yield handle_app_trigger(self, dash_user)
+        pass
+#        if api_func['function'] == panel_action:
+ #           yield handle_app_trigger(self, dash_user)
 
     @tornado.gen.coroutine
     def exec_method(self, method, path, data):
@@ -250,14 +249,16 @@ class ApiHandler(tornado.web.RequestHandler):
 
             if api_func['function'] not in [user_login]:
                 auth_successful = yield self.handle_user_auth(path)
-                if not auth_successful:
+
+                if not auth_successful: 
+                    self.config.logger.error("Authentication not successful for " + api_func['function'].func_name)
+
                     raise tornado.gen.Return({"success" : False, "message" : "Authentication not successful for " + api_func['function'].func_name, "data" : {}})
 
                 if user['type'] == 'user' : 
                     predef_args = yield get_predefined_arguments(self.datastore_handler, user, data.get('action', path))
                     data.update(predef_args)
 
-            print ('Calling ', api_func, ' with data ', data, ' where keys are : ', data.keys())
             result = yield self.handle_func(api_func, data)
 #            yield self.check_and_resolve_trigger(api_func, data['dash_user'])
 

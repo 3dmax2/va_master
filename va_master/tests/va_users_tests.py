@@ -47,7 +47,7 @@ class VAUsersTests(VATestBase):
     def test_add_user(self):
         user_functions = ['apps/action', 'panels', 'apps/get_panel']
         group = {'name' : 'providers', 'functions' : [{'func_path' : 'providers'}]}
-        new_user = {'user' : 'test_user', 'password' : 'test_password', 'user_type' : 'user', 'functions' : user_functions, 'groups' : [group['name']]}
+        new_user = {'user' : 'auto_testing_user', 'password' : 'test_password', 'user_type' : 'user', 'functions' : user_functions, 'groups' : [group['name']]}
 
         self.add_group(group)
         self.add_user(new_user)

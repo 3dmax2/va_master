@@ -36,6 +36,7 @@ class VAServicesTests(VATestBase):
         self.assert_success(result)
 
         all_checks = self.api.api_call('/services/get_services_with_checks')
+        self.assert_success(all_checks)
 #        self.assert_all_checks(all_checks)
 
         services = all_checks['data'].keys()
@@ -43,3 +44,4 @@ class VAServicesTests(VATestBase):
 
 
         result = self.api.api_call('/services/delete_service', method = 'delete', data = {"service_name" : new_service['name']})
+

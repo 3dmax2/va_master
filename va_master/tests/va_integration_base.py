@@ -71,7 +71,6 @@ class VATestBase(object):
                 pass
                 self.logger.error('Function %s failed with: %s' % (error[0], error[1]))
         for result in self.function_results: 
-            pass
             self.logger.debug('Function %s had output %s. ' % (result[0], result[1]))
 #        print self.function_results #TODO print prettier
 

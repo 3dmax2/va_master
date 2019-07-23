@@ -197,7 +197,7 @@ def panel_action_execute(handler, server_name, action, args = [], dash_user = {}
     #        raise Exception('Calling %s on %s returned an error. ' % (module + '.' + action, server_name))
 
     else: 
-        result = yield handle_app_action(datastore_handler, server, action, args, kwargs)
+        result = yield handle_app_action(handler, server, action, args, kwargs)
 
     #This is very finicky design. We import the function here to resolve circular imports with integrations (see TODO there as well)
     #TODO find a way to properly resolve this, probably by writing another module somewhere somehow. 
@@ -421,7 +421,6 @@ def get_panels_stats(handler, dash_user):
     result = {'providers' : len(providers), 'servers' : len(servers), 'services' : serv, 'vpn' : len(vpn['users']), 'apps' : len(states), "integrations" : len(integrations)}
     raise tornado.gen.Return(result)
 
-
 @tornado.gen.coroutine
 def get_panel_for_user(handler, panel, server_name, dash_user, args = [], kwargs = {}):
     """
@@ -457,27 +456,17 @@ def get_panel_for_user(handler, panel, server_name, dash_user, args = [], kwargs
     if not kwargs: 
         kwargs = {x : handler.data[x] for x in handler.data if x not in ignored_kwargs}
 
-    if not dash_user['type'] == 'admin': 
-        panel_func = [x for x in dash_user.get('functions', []) if  x.get('func_path', '') == panel]
-        if not panel_func: 
-            raise Exception("User tried to open panel " + str(panel) + " but it is not in their allowed functions. ")
-
-        panel_func = panel_func[0]
-        kwargs.update(panel_func.get('predefined_arguments', {}))
-
     action = 'get_panel'
     if type(args) != list and args: 
         args = [args]
     args = [panel] + args
     
     server = yield datastore_handler.get_object(object_type = 'server', server_name = server_name)
-
     if server.get('app_type', 'salt') == 'salt':
         state = get_minion_role(server_name) 
         state = yield datastore_handler.get_state(name = state)
         args = [state['module']] + args
 
-    print ('Will get salt with ', kwargs)
     panel  = yield panel_action_execute(handler, server_name, action, args, dash_user, kwargs = kwargs, module = 'va_utils')
     raise tornado.gen.Return(panel)
 

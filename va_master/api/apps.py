@@ -8,9 +8,11 @@ import zipfile, tarfile
 from va_master.utils.paramiko_utils import ssh_call
 from va_master.utils.va_utils import bytes_to_readable, get_route_to_minion, call_master_cmd
 
+from va_master.api.integrations import trigger_all_integrations
+
 from va_master.handlers.server_management import manage_server_type
 from va_master.handlers.salt_handler import add_minion_to_server
-from va_master.handlers.app_handler import install_new_app
+from va_master.handlers.app_handler import install_new_app, handle_app_action
 from tornado.concurrent import run_on_executor, Future
 
 import salt_manage_pillar
@@ -32,13 +34,15 @@ def get_paths():
             'apps/get_all_salt_functions' : {'function' : get_all_salt_functions, 'args' : []},
 
             'states' : {'function' : get_states, 'args' : ['handler', 'dash_user']},
+            'apps' : {'function' : get_states, 'args' : ['handler', 'dash_user']},
 
         },
         'post' : {
             'state/add' : {'function' : create_new_state,'args' : ['file', 'body', 'filename']},
             'states/reset' : {'function' : reset_states, 'args' : ['datastore_handler']}, 
             'apps/new/validate_fields' : {'function' : validate_app_fields, 'args' : ['handler']},
-            'apps' : {'function' : launch_app, 'args' : ['handler']},
+            'apps/launch_app' : {'function' : launch_app, 'args' : ['handler', 'dash_user']},
+            'apps/provision_app' : {'function' : provision_app, 'args' : ['handler', 'dash_user']},
             'apps/change_app_type' : {'function' : change_app_type, 'args' : ['datastore_handler', 'server_name', 'app_type']},
             'apps/install_new_app' : {'function' : install_app, 'args' : ['datastore_handler', 'app_zip', 'app_json']},
             'apps/get_app_required_args' : {'function' : get_app_args, 'args' : ['datastore_handler', 'app_name']},
@@ -49,7 +53,7 @@ def get_paths():
             'apps/list_user_logins': {'function' : list_user_logins, 'args' : ['username']},
             'apps/download_vpn_cert': {'function' : download_vpn_cert, 'args' : ['username', 'handler']},
             'servers/add_server' :  {'function' : add_server_to_datastore, 'args' : ['datastore_handler', 'server_name', 'ip_address', 'hostname', 'manage_type', 'user_type', 'driver_name', 'app_type', 'role', 'kwargs']},
-            'servers/manage_server' : {'function' : manage_server_type, 'args' : ['datastore_handler', 'server_name', 'new_type', 'username', 'driver_name', 'role', 'ip_address']},
+            'servers/manage_server' : {'function' : manage_server_type, 'args' : ['datastore_handler', 'server_name', 'new_type', 'username', 'driver_name', 'role', 'ip_address', 'app_type']},
         }
     }
     return paths
@@ -117,7 +121,7 @@ def add_openvpn_user(username):
     """
 
     success = call_master_cmd('openvpn.add_user', kwarg = {'username' : username})
-    if success:
+    if not success:
         raise Exception('Adding an openvpn user returned with an error. ')
     raise tornado.gen.Return({'success' : True, 'data' : None, 'message' : 'User added successfuly. '})
 
@@ -196,7 +200,7 @@ def perform_server_action(handler, action, server_name, provider_name = '', acti
 
     result = None
     if action_type == 'app' : 
-        result = yield handle_app_action(server = server, action = action, args = args, kwargs = kwargs)
+        result = yield handle_app_action(handler, server = server, action = action, args = args, kwargs = kwargs)
     else: 
         provider_name = provider_name or 'va_standalone_servers'
         
@@ -207,7 +211,6 @@ def perform_server_action(handler, action, server_name, provider_name = '', acti
         result = {'success' : True, 'message' : '', 'data' : result}
 
     result['message'] = 'Action %s completed successfuly. ' % action
-    print ('ACtino result is : ', result)
     raise tornado.gen.Return(result)
 
 
@@ -278,6 +281,7 @@ def reset_states(datastore_handler):
 @tornado.gen.coroutine
 def install_app(datastore_handler, app_zip, app_json):
 
+    print (app_zip)
     app_zip = app_zip[0]['body']
     app_json = app_json[0]['body']
     print (app_json)
@@ -348,18 +352,56 @@ def write_pillar(data):
         f.write(pillar_str)
     salt_manage_pillar.add_server(data.get('server_name'), data.get('role', ''))
 
+
 @tornado.gen.coroutine
-def launch_app(handler):
+def provision_app(handler, dash_user):
+    yield trigger_all_integrations(handler, dash_user, event_name = 'va-master.apps/launch_app', kwargs = {'status' : 'Initialized'})
+#    yield tornado.gen.sleep(15)
+
+    new_server = yield launch_app(handler, dash_user)
+    yield trigger_all_integrations(handler, dash_user, event_name = 'va-master.apps/launch_app', kwargs = {'status' : 'Created'})
+#    yield tornado.gen.sleep(15)
+
+    result = yield add_minion_to_server(handler.datastore_handler, handler.data['server_name'], new_server['ip_address'], handler.data['role'], key_filename = '/root/.ssh/va-master.pem', username = handler.data.get('username', 'root'))
+    yield trigger_all_integrations(handler, dash_user, event_name = 'va-master.apps/launch_app', kwargs = {'status' : 'Completed'})
+
+
+
+@tornado.gen.coroutine
+def launch_app(handler, dash_user):
     """
-    Launches a server based on the data supplied. This is dependent on the specific data required by the providers. 
+        description: "Launches a server based on the data supplied. This is dependent on the specific data required by the providers. 
     The default for starting servers is using salt-cloud -p <profile> <minion_name>, where the drivers are responsible for creating the configuration files. 
     Some drivers work independent of salt though, such as libvirt. 
     If the extra_fields key is supplied, it will create a specific pillar for the server. 
     If provider_name is not sent, it will create a va_standalone server, with the invisible driver va_standalone_servers. 
     If role is sent, then the function will try to get data for the minion using salt-call mine.get  <minion_name> inventory. If it does this successfully, it will add the server to the datastore, and add a ping service for the server. 
+Updates the subscriptions status. "
+        output: None
+        arguments: 
+          - name: provider_name
+            description: The provider which will be used to create a server. If none, the it will be added as a standalone server. 
+            type: string
+            required: False
+            default: va_standalone_servers
+          - name: server_name 
+            description: The name of the server which will be used to display the server on the va-master.
+            type: string
+            required: True
+          - name: ip
+            description: The IP address of the server. If not set, then it is up to the provider to return an ip address for the server. 
+            type: string
+            required: False 
+          - name: role
+            description: The role of the server. This is typically used for salt, but in general, servers should have an app associated with them. 
+            required: True
+        visible: True
+        event: True
+        data_prefix: "kwargs"
     """
 
     data = handler.data
+    print ('Creating with data : ', data)
     try:
         provider, driver = yield providers.get_provider_and_driver(handler, data.get('provider_name', 'va_standalone_servers'))
     
@@ -383,16 +425,18 @@ def launch_app(handler):
         while not minion_info and retries < int(handler.data.get('mine_retries', '10')):
             minion_info = yield get_app_info(handler.data['server_name'])
             minion_info.update({'type' : 'app'})
+
             retries += 1
             if not minion_info: 
                 yield tornado.gen.sleep(10)
 
-        yield services.add_services_presets(minion_info, ['ping'])
+#        yield services.add_services_presets(minion_info, ['ping'])
 
-        if not minion_info: 
-            raise tornado.gen.Return({"success" : False, "message" : "No minion_info, something probably went wrong with trying to start the instance. ", "data" : None})
-        else: 
-            yield manage_server_type(handler.datastore_handler, server_name = data['server_name'], new_type = 'app', role = data['role'])
+#        if not minion_info: 
+#            raise tornado.gen.Return({"success" : False, "message" : "No minion_info, something probably went wrong with trying to start the instance. ", "data" : None})
+#        else: 
+#            yield manage_server_type(handler.datastore_handler, server_name = data['server_name'], new_type = 'app', role = data['role'])
+
 
     raise tornado.gen.Return(result)
 

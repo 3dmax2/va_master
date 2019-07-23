@@ -118,10 +118,12 @@ class ConsulStore(DataStore):
     def get_recurse(self, doc_id):
         try:
             result = yield self.get_exec(doc_id, params = {"recurse" : True})
-        except: 
-#            import traceback
-#            traceback.print_exc()
+        except KeyNotFound: #If key is not found, we assume it's empty, so we default to an empty list. 
             result = []
+        except: 
+            print ('Error with keystore : ')
+            import traceback
+            traceback.print_exc()
         raise tornado.gen.Return(result)
 
     @tornado.gen.coroutine

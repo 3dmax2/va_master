@@ -76,14 +76,17 @@ def handle_app_package(path_to_app, action = 'install'):
 
 
 @tornado.gen.coroutine
-def handle_app_action(datastore_handler, server, action, args, kwargs):
+def handle_app_action(handler, server, action, args, kwargs):
+    datastore_handler = handler.datastore_handler
+    kwargs.update(handler.data)
     app = yield datastore_handler.get_object('app', app_name = server['role'])
     app_action = app['functions'][action]
-    app_kwargs = {x : server[x] for x in app_action.get('args', [])}
-    kwargs.update(app_kwargs)
+    app_args = {}
+    for arg in app_action.get('args', []):
+        app_args[arg] = server.get(arg) or kwargs.get(arg)
 
     app_module = app['module']
     app_module = importlib.import_module(app_module)
-    print (args, kwargs, app_module, action)
-    result = getattr(app_module, action)(*args, **kwargs)
+    print ('Sending ', app_args)
+    result = getattr(app_module, action)(**app_args)
     raise tornado.gen.Return(result)

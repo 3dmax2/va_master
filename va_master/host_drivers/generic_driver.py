@@ -156,7 +156,6 @@ class GenericDriver(base.DriverBase):
         servers = yield self.datastore_handler.get_provider(provider['provider_name'])
         servers = servers['servers']
         result = []
-        
         if provider['provider_name'] == 'va_standalone_servers' : 
             provider['provider_name'] = ''
 

@@ -315,7 +315,6 @@ def get_providers_info(handler, dash_user, get_billing = True, get_servers = Tru
     if required_providers: 
         providers = [provider for provider in providers if provider['provider_name'] in required_providers]
 
-    
     provider_drivers = yield [drivers_handler.get_driver_by_id(x['driver_name']) for x in providers]
     providers_data = [x[0].get_provider_data(provider = x[1], get_servers = get_servers, get_billing = get_billing) for x in zip(provider_drivers, providers)]
     providers_info = yield providers_data
@@ -352,12 +351,14 @@ def get_providers_info(handler, dash_user, get_billing = True, get_servers = Tru
     providers_info = [x for x in providers_info if x['provider_name']]
 
     standalone_default_values = {'size' : ''}
-
     standalone_provider = yield datastore_handler.get_provider('va_standalone_servers')
     standalone_driver = yield drivers_handler.get_driver_by_id('generic_driver')
     standalone_servers = yield standalone_driver.get_servers(standalone_provider)
+    standalone_provider_data = yield standalone_driver.get_provider_data({'provider_name' : 'va_standalone_servers'})
+
 
     for s in standalone_servers: 
+        print ('Have : ', s, ' for servers')
         datastore_server = yield datastore_handler.get_object(object_type = 'server', server_name = server.get('server_name', server.get('hostname', '')))
         s.update(datastore_server)
 
@@ -369,8 +370,12 @@ def get_providers_info(handler, dash_user, get_billing = True, get_servers = Tru
         {
             "provider_name" : "", 
             "servers" : [x for x in standalone_servers if x.get('location', 'va-master') == l], 
+            "provider_usage" : standalone_provider_data['provider_usage'],
+            "status" : standalone_provider_data['status'],
             "location" : l,
         } for l in standalone_locations]
+
+    print ('Standalone are : ', standalone_providers)
     providers_info += standalone_providers
 
     if sort_by_location: 
@@ -381,8 +386,6 @@ def get_providers_info(handler, dash_user, get_billing = True, get_servers = Tru
             [x for x in providers_info if x.get('location', 'va-master') == l] for l in [x.get('location', 'va-master')
          for x in providers_info]}
 
-
-    print ('Info is : ', providers_info)
     raise tornado.gen.Return(providers_info)
 
 

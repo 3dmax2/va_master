@@ -7,8 +7,8 @@ from salt.client import LocalClient
 def get_paths():
     paths = {
         'get' : {
-            'panels/get_functions' : {'function' : get_all_functions, 'args' : ['handler']},
-            'panels/get_all_functions' : {'function' : get_all_functions_dashboard, 'args' : ['handler', 'dash_user']},
+            'panels/get_functions' : {'function' : get_all_functions, 'args' : ['datastore_handler']},
+            'panels/get_all_functions' : {'function' : get_all_functions_dashboard, 'args' : ['datastore_handler', 'dash_user']},
         },
         'post' : {
             'panels/add_functions_to_datastore' : {'function' : add_functions_to_datastore, 'args' : ['handler']},
@@ -27,10 +27,9 @@ def function_is_documented(doc, func_name = ''):
         
     """
 
-
     #This is kind of a testing thing, if I'm creating a function and it appears not to be documented, just put the functino name here and it will print out stuff which may be useful. 
-    test_function = 'create_employee'
-    testing = False
+    test_function = 'launch_app'
+    testing = False 
 
     if func_name == test_function: 
         print ('Testing ', test_function)
@@ -38,7 +37,10 @@ def function_is_documented(doc, func_name = ''):
         testing = True
 
     #Sometimes we straight up pass the docstring to this function. 
-    if callable(doc): 
+    if callable(doc):
+        print (doc.func_name)
+        if doc.func_name == test_function: 
+            testing = True
         doc = doc.__doc__
         if testing: 
             print ('Doc was ', doc)
@@ -83,9 +85,9 @@ def function_is_documented(doc, func_name = ''):
 
 def get_master_functions(handler):
     functions = {
-        method : [
-            [path, yaml.load(handler.paths[method][path]['function'].__doc__)] for path in handler.paths[method] if function_is_documented(handler.paths[method][path]['function'])
-        ] for method in ['post', 'get']
+        'va-master' : [
+            [path, yaml.load(handler.paths[method][path]['function'].__doc__)] for method in ['post', 'get'] for path in handler.paths[method] if function_is_documented(handler.paths[method][path]['function'])
+        ]
     }
     return functions
 
@@ -94,7 +96,8 @@ def get_salt_functions():
 
     salt_functions = cl.cmd('G@role:va-master', fun = 'va_utils.get_documented_module_functions', tgt_type = 'compound')
     salt_functions = salt_functions.items()[0][1]
-    print ('Salt : ', salt_functions)
+    if type(salt_functions) in [unicode, str]: 
+        return []
     salt_functions = {
         method : [[function[0], yaml.load(function[1])] for function in salt_functions[method] if function_is_documented(function[1], func_name = function[0])]
     for method in salt_functions}
@@ -190,8 +193,6 @@ def get_api_functions(datastore_handler):
     for app in apps:
         imported_module = importlib.import_module(app['module'])
         module_functions = inspect.getmembers(imported_module, inspect.isfunction)
-#        print (module_functions)
-#        print ('Calling documented with ', [x[1] for x in module_functions])
         module_functions = [[x[0], yaml.load(x[1].__doc__)] for x in module_functions if function_is_documented(x[1], func_name = x[0])]
         all_functions[app['module']] = module_functions
 
@@ -218,12 +219,12 @@ def gather_all_functions(handler):
 
 
 @tornado.gen.coroutine
-def get_all_functions(handler):
+def get_all_functions(datastore_handler):
     """
         description: Gets all functions from consul. TODO finish doc
     """
 
-    functions = yield handler.datastore_handler.datastore.get_recurse('function_doc')
+    functions = yield datastore_handler.datastore.get_recurse('function_doc')
     raise tornado.gen.Return(functions)
 
 
@@ -241,17 +242,16 @@ def add_functions_to_datastore(handler):
             yield handler.datastore_handler.insert_object(object_type = 'function_doc', func_group = function_group, func_name = function[0], data = function[1])
 
 @tornado.gen.coroutine
-def get_all_functions_dashboard(handler, dash_user):
-    functions = yield get_all_functions(handler)
+def get_all_functions_dashboard(datastore_handler, dash_user):
+    functions = yield get_all_functions(datastore_handler)
     print ('Got functions.')
     result = yield format_functions_for_dashboard(functions, dash_user)
     print ('Got result')
     raise tornado.gen.Return(result)
 
 @tornado.gen.coroutine
-def get_function(handler, func_name, func_group):
-    all_functions = yield get_all_functions(handler)
+def get_function(datastore_handler, func_name, func_group):
+    all_functions = yield get_all_functions(datastore_handler)
     for function in all_functions: 
-        print ('Checking ', function['func_name'])
         if function['func_group'] == func_group and function['func_name']  == func_name: 
             raise tornado.gen.Return(function)
