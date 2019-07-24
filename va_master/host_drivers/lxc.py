@@ -139,7 +139,7 @@ class LXCDriver(base.DriverBase):
     @tornado.gen.coroutine
     def get_images(self):
         """ Gets the images using salt-cloud. """
-        images = [x.properties['description'] for x in self.cl.images.all()]
+        images = [x.properties['alias'] for x in self.cl.images.all()]
         raise tornado.gen.Return(images)
 
     @tornado.gen.coroutine

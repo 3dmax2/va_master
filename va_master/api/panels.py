@@ -132,7 +132,7 @@ def list_panels(datastore_handler, dash_user):
     """
 
     panels = yield datastore_handler.get_panels(dash_user['type'])
-
+    print ('Panels : ', panels)
     raise tornado.gen.Return(panels)
 
 @tornado.gen.coroutine
