@@ -180,28 +180,41 @@ def list_integrations(datastore_handler):
     raise tornado.gen.Return(events)
 
 @tornado.gen.coroutine
-def get_trigger_kwargs_from_data(datastore_handler, trigger, request_data, args_map, event_data_prefix = ''):
-
+def get_trigger_kwargs_from_data(handler, trigger, request_data, args_map, event_data_prefix = ''):
+    print ('Getting ', trigger['event_name'].split('.'))
+    print ('Request data is : ', request_data)
     func_group, func_name = trigger['event_name'].split('.')
-   
-    event_func = yield documentation.get_function(datastore_handler, func_name, func_group)
+
+    print ('Getting ', func_name, func_group)
+    event_func = yield documentation.get_function(handler, func_name, func_group)
+    print ('Have : ', event_func)
     event_func_prefix = event_func.get('data_prefix', '')
     event_data_prefix =  event_data_prefix or event_func_prefix
 
     prefix_keys = event_data_prefix.split('.')
     for prefix_key in prefix_keys:
-        if prefix_key: 
+        if prefix_key:
             request_data = request_data.get(prefix_key)
-            if not request_data: 
+            if not request_data:
                 print ('Key ', prefix_key, ' not found in ', request_data)
                 raise tornado.gen.Return({})
 
-
     #NOTE this line is kinda fishy - if the request data doesn't contain all keys, we just ignore the missing ones. 
     #This was added so that the dashboard calls which send positional arguments don't mess everything up. However, I should think of a better way to handle that. 
-    kwargs = {key: request_data.get(args_map[key]) for key in args_map if request_data.get(args_map[key])}
-    raise tornado.gen.Return(kwargs)        
+    kwargs = {key: request_data.pop(args_map[key]) for key in args_map if request_data.get(args_map[key])}
 
+
+    #We go through the args_map to see if any argument has a wildcard value.
+    #Wildcard arguments just get all the data that hasn't been used up by the regular arguments. 
+    wildcard = [x for x in args_map if args_map[x] == '*'] or [None]
+    wildcard = wildcard[0]
+    if wildcard:
+        kwargs[wildcard] = request_data
+
+    if args_map.get('*'):
+        kwargs[args_map] = request_data
+    print ('FInal kwargs are : ', kwargs)
+    raise tornado.gen.Return(kwargs)
 
 @tornado.gen.coroutine
 def handle_app_trigger(handler, dash_user, server_name, action):
@@ -275,7 +288,7 @@ def receive_trigger(handler, dash_user, donor_app, receiver_app, event_name, kwa
                         #TODO probably write another module (a handler maybe?) dedicated to executing panel actions which will hold panel_action_execute so both panels.py and integrations.py can import it
                         #I don't know what the logical idea behind this module would be, but I'll think of something. 
                         from va_master.api.panels import panel_action_execute
-                        new_result = yield panel_action_execute(handler, dash_user = dash_user, server_name = server['server_name'], action = action['func_name'], kwargs = kwargs, args = handler.data.get('args', []))
+                        new_result = yield panel_action_execute(handler, dash_user = dash_user, server_name = server['server_name'], action = action['func_name'], kwargs = action_kwargs, args = handler.data.get('args', []))
 #                        print ('Result : ', new_result)
                         results.append(new_result)
 
