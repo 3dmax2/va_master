@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import {connect} from 'react-redux';
 import {Chart, Doughnut, Bar, defaults} from "react-chartjs-2";
-import Graph from'react-graph-vis';
+var vis = require('../static/vis');
 var Network = require('../network');
 import {getRandomColors, getSpinner, getTimestamp} from './util';
 import {hashHistory} from 'react-router';
@@ -160,83 +160,104 @@ class Overview extends Component {
     }
 }
 
-const Diagram = (props) => {
-    const graphOptions = {
-        layout: {
-            hierarchical: {
-                direction: "UD",
-                sortMethod: "directed",
-                nodeSpacing: 120,
-                levelSeparation: 50
+class Diagram extends Component{
+    constructor(props){
+        super(props);
+        this.state={};
+    }
+    componentDidMount(){
+        console.log(this.props);
+        const graphOptions = {
+            layout: {
+                hierarchical: {
+                    direction: "UD",
+                    sortMethod: "directed",
+                    nodeSpacing: 120,
+                    levelSeparation: 50
+                }
+            },
+            edges: {
+                color: "#000000",
+                arrows: {
+                    to: {
+                        enabled: false,
+                        scaleFactor: 0.5
+                    }
+                }
+            },
+            nodes: {
+                size: 15,
+                font: {
+                    size : 11,
+                    color : 'white',
+                    face : 'Ubuntu'
+                },
+                margin: {
+                    top: 8,
+                    right: 8,
+                    left: 8,
+                    bottom: 8
+                }
+            },
+            physics: {
+                enabled: false
             }
-        },
-        edges: {
-            color: "#000000",
-            arrows: {
-                to: {
-                    enabled: false,
-                    scaleFactor: 0.5
+        };
+
+        var container = document.getElementById('mynetwork');
+
+        var graph = {nodes: [], edges: []}, ll = 0;
+        graph.nodes.push({id: 'master', label: "va-master", shape: 'box', color: '#337ab7'});
+        for(var location in this.props.providers){
+            var provider = this.props.providers[location];
+            var txt = location;
+            txt = txt.length > 17 ? txt.substring(0,17) : txt;
+            graph.nodes.push({id: location, label: txt, shape: 'box', color: '#97c2fc'});
+            graph.edges.push({from: 'master', to: location});
+            ll++;
+
+            for(let i=0; i<provider.length; i++){
+                let p = provider[i];
+                txt = p.name;
+                let id = location + "/" + txt;
+                if(txt){
+                    txt = txt.length > 17 ? txt.substring(0,17) : txt;
+                    graph.nodes.push({id: id, label: txt, shape: 'box', color: {border: '#696969', background: 'gray', highlight: {border: 'gray', background: '#909090'}}});
+                    graph.edges.push({from: location, to: id});
+                }else{
+                    id = location;
+                }
+
+                for(let j=0; j<p.servers.length; j++){
+                    let server = p.servers[j], newId = id + "/" + server.name;
+                    txt = server.name + "\nIP: " + server.ip;
+                    graph.nodes.push({id: newId, label: txt, shape: 'box', color: '#4bae4f'});
+                    graph.edges.push({from: id, to: newId});
                 }
             }
-        },
-        nodes: {
-            size: 15,
-            font: {
-                size : 11,
-                color : 'white',
-                face : 'Ubuntu'
-            },
-            margin: {
-                top: 8,
-                right: 8,
-                left: 8,
-                bottom: 8
-            }
-        },
-        physics: {
-            enabled: false
         }
-    };
-    var graph = {nodes: [], edges: []}, ll = 0;
-    graph.nodes.push({id: 'master', label: "va-master", shape: 'box', color: '#337ab7'});
-    for(var location in props.providers){
-        var provider = props.providers[location];
-        var txt = location;
-        txt = txt.length > 17 ? txt.substring(0,17) : txt;
-        graph.nodes.push({id: location, label: txt, shape: 'box', color: '#97c2fc'});
-        graph.edges.push({from: 'master', to: location});
-        ll++;
+        console.log('graph_data', graph);
+        var data = {
+                nodes: new vis.DataSet(graph.nodes),
+                edges: new vis.DataSet(graph.edges)
+        };
 
-        for(let i=0; i<provider.length; i++){
-            let p = provider[i];
-            txt = p.name;
-            let id = location + "/" + txt;
-            if(txt){
-                txt = txt.length > 17 ? txt.substring(0,17) : txt;
-                graph.nodes.push({id: id, label: txt, shape: 'box', color: {border: '#696969', background: 'gray', highlight: {border: 'gray', background: '#909090'}}});
-                graph.edges.push({from: location, to: id});
-            }else{
-                id = location;
-            }
-
-            for(let j=0; j<p.servers.length; j++){
-                let server = p.servers[j], newId = id + "/" + server.name;
-                txt = server.name + "\nIP: " + server.ip;
-                graph.nodes.push({id: newId, label: txt, shape: 'box', color: '#4bae4f'});
-                graph.edges.push({from: id, to: newId});
-            }
-        }
+        var network = new vis.Network(this.refs.mynetwork, data, graphOptions);
     }
-    var style = { width: '100%', height: '180px' };
-    return (
-        <div className="card panel-default custom-panel" style={{marginBottom: '0px'}}>
-            <div className="panel-heading">Diagram</div>
-            <div className="panel-body">
-                <Graph graph={graph} options={graphOptions} style={style} events={{}} />
-                <div className="hidden">{props.sidebar.collapsed}</div>
+
+    render(){
+        var style = { width: '100%', height: '180px' };
+        return (
+            <div className="card panel-default custom-panel" style={{marginBottom: '0px'}}>
+                <div className="panel-heading">Diagram</div>
+                <div className="panel-body">
+                    <div ref="mynetwork" style={style} events={{}}></div>
+                    {/*<div id="mynetwork" style={style} events={{}}></div>*/}
+                    <div className="hidden">{this.props.sidebar.collapsed}</div>
+                </div>
             </div>
-        </div>
-    );
+        );
+    }
 }
 
 const Provider = (props) => {
