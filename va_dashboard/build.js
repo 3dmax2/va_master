@@ -1,3 +1,5 @@
+/* Created by mnacev, 23.08.2019 */
+
 var fs = require("fs");
 var browserify = require('browserify');
 var resolve = require('path').resolve;
